@@ -22,7 +22,7 @@ def train_gruode(simulation_name,params_dict,device, train_idx, val_idx, test_id
 
     N = pd.read_csv(csv_file_path)["ID"].nunique()
     
-    if params_dict["lambda"]==0:
+    if params_dict["lambda"]==0: # 不做分类，只做回归，没有label
         validation = True
         val_options = {"T_val": params_dict["T_val"], "max_val_samples": params_dict["max_val_samples"]}
     else:
@@ -150,7 +150,6 @@ def train_gruode(simulation_name,params_dict,device, train_idx, val_idx, test_id
                     m, v = torch.chunk(p_val,2,dim=1)
                     last_loss = (data_utils.log_lik_gaussian(X_val,m,v)*M_val).sum()
                     mse_loss = (torch.pow(X_val-m,2)*M_val).sum()
-                    print('X_val:', X_val[0, :], 'm:', m[0, :])
                     corr_val_loss = data_utils.compute_corr(X_val, m, M_val)
 
                     loss_val += last_loss.cpu().numpy()
@@ -267,14 +266,13 @@ if __name__ =="__main__":
     train_idx = np.load("../../gru_ode_bayes/datasets/Climate/folds/small_chunk_fold_idx_0/train_idx.npy",allow_pickle=True)
     val_idx = np.load("../../gru_ode_bayes/datasets/Climate/folds/small_chunk_fold_idx_0/val_idx.npy",allow_pickle=True)
     test_idx = np.load("../../gru_ode_bayes/datasets/Climate/folds/small_chunk_fold_idx_0/test_idx.npy",allow_pickle=True)
-
+    
     #Model parameters.
     params_dict=dict()
 
     params_dict["csv_file_path"] = "../../gru_ode_bayes/datasets/Climate/small_chunked_sporadic.csv" 
     params_dict["csv_file_tags"] = None
     params_dict["csv_file_cov"]  = None
-
     params_dict["hidden_size"] = 50
     params_dict["p_hidden"] = 25
     params_dict["prep_hidden"] = 10
@@ -296,13 +294,33 @@ if __name__ =="__main__":
 
     params_dict["T_val"] = 150
     params_dict["max_val_samples"] = 3
+    
+    csv_file_path = params_dict["csv_file_path"]
+    csv_file_cov = params_dict["csv_file_cov"]
+    csv_file_tags = params_dict["csv_file_tags"]
+    if params_dict["lambda"]==0:
+        validation = True
+        val_options = {"T_val": params_dict["T_val"], "max_val_samples": params_dict["max_val_samples"]}
+    else:
+        validation = False
+        val_options = None
+    data_test = data_utils.ODE_Dataset(csv_file=csv_file_path,label_file=csv_file_tags,
+                                        cov_file= csv_file_cov, idx=test_idx, validation = validation,
+                                        val_options = val_options)
+    dl_test = DataLoader(dataset=data_test, collate_fn=data_utils.custom_collate_fn, shuffle=False, batch_size=len(test_idx))
+    class_criterion = torch.nn.BCEWithLogitsLoss(reduction='sum')
+    
+    params_dict["input_size"] = data_test.variable_num
+    params_dict["cov_size"] = data_test.cov_dim
 
-
-
-    info, val_metric_prev, test_loglik, test_auc, test_mse = train_gruode(simulation_name = simulation_name,
-                        params_dict = params_dict,
-                        device = device,
-                        train_idx = train_idx,
-                        val_idx = val_idx,
-                        test_idx = test_idx,
-                        epoch_max=100)
+    model = gru_ode_bayes.NNFOwithBayesianJumps(input_size = params_dict["input_size"], hidden_size = params_dict["hidden_size"],
+                                            p_hidden = params_dict["p_hidden"], prep_hidden = params_dict["prep_hidden"],
+                                            logvar = params_dict["logvar"], mixing = params_dict["mixing"],
+                                            classification_hidden=params_dict["classification_hidden"],
+                                            cov_size = params_dict["cov_size"], cov_hidden = params_dict["cov_hidden"],
+                                            dropout_rate = params_dict["dropout_rate"],full_gru_ode= params_dict["full_gru_ode"], impute = params_dict["impute"]).to(device)
+    state_dict = torch.load('/home/zhangdi24/gru_ode_bayes/experiments/trained_models/small_climate.pt', map_location=device)
+    model.load_state_dict(state_dict)
+    
+    test_loglik, test_auc, test_mse = test_evaluation(model, params_dict, class_criterion, device, dl_test)
+    print('test_loglik:', test_loglik, 'test_auc:', test_auc, "test_mse:", test_mse)

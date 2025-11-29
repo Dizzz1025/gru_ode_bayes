@@ -167,14 +167,14 @@ class ODE_Dataset(Dataset):
             self.df = self.df_before #We remove observations after T_val
 
 
-            self.df_after.ID = self.df_after.ID.astype(np.int)
+            self.df_after.ID = self.df_after.ID.astype(int)
             self.df_after.sort_values("Time", inplace=True)
         else:
             self.df_after = None
 
 
         self.length     = self.df["ID"].nunique()
-        self.df.ID      = self.df.ID.astype(np.int)
+        self.df.ID      = self.df.ID.astype(int)
         self.df.set_index("ID", inplace=True)
 
         self.df.sort_values("Time", inplace=True)
@@ -229,9 +229,11 @@ def custom_collate_fn(batch):
     df        = pd.concat([b["path"] for b in batch],axis=0)
     df.sort_values(by=["Time"], inplace=True)
 
-    df_cov    = torch.Tensor([b["cov"] for b in batch])
+    # df_cov    = torch.Tensor([b["cov"] for b in batch])
+    df_cov = torch.tensor(np.stack([b["cov"] for b in batch]), dtype=torch.float32)
 
-    labels  = torch.tensor([b["y"] for b in batch])
+    # labels  = torch.tensor([b["y"] for b in batch])
+    labels = torch.tensor(np.stack([b["y"] for b in batch]), dtype=torch.float32)
 
     batch_ids     = idx2batch[df.index.values].values
 

@@ -5,3 +5,5 @@
 *results.csv*
 *.pt*
 *.npy*
+data_preproc/NYCtaxi/data/
+gru_ode_bayes/datasets/
